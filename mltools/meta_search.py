@@ -18,6 +18,13 @@ from IPython.parallel import Client
 from sklearn.cross_validation import ShuffleSplit
 import os
 
+############## Grid Search on Meta search ##############
+def grid_search(model, param_grid, ):
+    """
+    model - supports set_params(**params), fit(), score
+    """
+    pass
+
 ############### Run on master ################
 
 def persist_data_dict(data_dict, data_folder = './'):
@@ -46,3 +53,4 @@ def evaluate_model_on_data(model, params, datafile):
     X_train, y_train, X_validation, y_validation = joblib.load(datafile)
     model.set_params(**params)
     model.fit(X_train, y_train)
+    return model.score(X_validation, y_validation)
