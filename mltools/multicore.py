@@ -7,7 +7,7 @@ to enable ipython parallel
 
 import numpy as np
 
-__all__ = []
+__all__ = ['MulticoreJob']
 
 from IPython.parallel import Client
 
@@ -29,7 +29,14 @@ class MulticoreJob(object):
     def partial_result(self):
         return {tname:tresult.get() for (tname,tresult) in self.tasks.items()
                     if tresult.ready()}
-                    
+    def abort(self):
+        for (tname, tresult) in self.tasks.items():
+            if not tresult.ready():
+                try:
+                    tresult.abort()
+                except:
+                    pass
+        return self
 def test():
     import time
     def gethost():
@@ -42,6 +49,10 @@ def test():
         time.sleep(2)  
         print 'progress: ', jobber.progress()
         print jobber.partial_result() 
+        if jobber.progress() > 0.5:
+            jobber.abort()
+    print 'after termination of jobs: ', jobber.progress(), jobber.isready(), jobber.partial_result()
+    print 'all tests passed ...'
                        
 if __name__ == '__main__':
     test()
