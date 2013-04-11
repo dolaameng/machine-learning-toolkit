@@ -1,7 +1,7 @@
 """
 multicore computing package
 use command
-$ipcluster -n 4 
+$ipcluster start -n 4 
 to enable ipython parallel
 """
 
@@ -39,12 +39,15 @@ class MulticoreJob(object):
         return self
 def test():
     import time
-    def gethost():
+    def gethost(t):
         import socket, time, random
-        time.sleep(random.randint(5, 15))
+        from sklearn.externals import joblib
+        #time.sleep(random.randint(5, 15))
+        time.sleep(t)
         return socket.gethostname()
     jobber = MulticoreJob()
-    jobber.apply(gethost, dict(zip(xrange(10), [{}]*10))) 
+    #jobber.apply(gethost, dict(zip(xrange(10), [None]*10))) 
+    jobber.apply(gethost, {i:{'t':i} for i in xrange(10)})
     while not jobber.isready():
         time.sleep(2)  
         print 'progress: ', jobber.progress()

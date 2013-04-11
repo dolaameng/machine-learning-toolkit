@@ -3,54 +3,51 @@ Multi-core support for meta-parameters search of
 machine learning models based on cross validation
 
 use command to start several multicore support, e.g.
-$ ipcluster -n 4 
+$ ipcluster start -n 4 
 
 the implementation is inspired by Grisel's presentation
 https://github.com/ogrisel/parallel_ml_tutorial
 """
-__all__ = ['persist_data_dict',
-        'persist_cv_splits',
-]
+__all__ = []
 
-from sklearn.externals import joblib
-from sklearn.grid_search import IterGrid
-from IPython.parallel import Client
+import dataio
+import multicore
 from sklearn.cross_validation import ShuffleSplit
 import os
 
-############## Grid Search on Meta search ##############
-def grid_search(model, param_grid, ):
+class CVSearch(object):
+    """search of meta parameters based on cross validation
+    WARNING: this class should NOT be used directly, use the derived classes instead
     """
-    model - supports set_params(**params), fit(), score
-    """
-    pass
-
-############### Run on master ################
-
-def persist_data_dict(data_dict, data_folder = './'):
-    filenames = {}
-    for (name, data) in data_dict.items():
-        filename = os.path.abspath(data_folder + name + '.pkl')
-        joblib.dump(data, filename)
-        filenames[name] = filename
-    return filenames
+    def __init__(self, name, X, y, data_folder, 
+                n_iter = 5, train_size = None, test_size = 0.2, random_state = 0):
+        self.n_iter = n_iter
+        self.train_size = train_size
+        self.test_size = test_size
+        self.random_state = random_state
+        self.suffix = '_cv_%03d'
+        self.datafiles = self.__persist_cv_splits(name, X, y, data_folder)
+        ##TODO
+    def __persist_cv_splits(self, name, X, y, data_folder):
+        cv = ShuffleSplit(X.shape[0], n_iter = self.n_iter,
+                                train_size = self.train_size, test_size = self.test_size,
+                                random_state = self.random_state)
+        named_data = {}
+        for (i, (train, test)) in enumerate(cv):
+            dataname = name + self.suffix % i
+            data = (X[train], y[train], X[test], y[test])
+            named_data[dataname] = data
+        return dataio.persist_named_data(data_folder, named_data)
     
-def persist_cv_splits(name, X, y, data_folder = './',
-            n_iter=5, suffix = '_cv_%03d',
-            test_size = 0.2, random_state = 0):
-    cv = ShuffleSplit(X.shape[0], n_iter = n_iter, 
-                    test_size = test_size, random_state = random_state)
-    datadict = {}
-    for (i, (train, test)) in enumerate(cv):
-        dataname = name + suffix % i
-        datablock = (X[train], y[train], X[test], y[test])
-        datadict[dataname] = datablock
-    return persist_data_dict(datadict, data_folder)
-    
-############### Run on workers in parallel ################
-def evaluate_model_on_data(model, params, datafile):
-    from sklearn.externals import joblib
-    X_train, y_train, X_validation, y_validation = joblib.load(datafile)
-    model.set_params(**params)
-    model.fit(X_train, y_train)
-    return model.score(X_validation, y_validation)
+
+
+def test():
+    from sklearn.datasets import load_digits
+    digits = load_digits()
+    X, y = digits.data, digits.target
+    cvsearch = CVSearch('digits', X, y, '../tmp/')
+    print cvsearch.datafiles
+    print 'all tests passed ...'
+
+if __name__ == '__main__':
+    test()
