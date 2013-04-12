@@ -15,6 +15,7 @@ from sklearn.cross_validation import ShuffleSplit
 from sklearn.grid_search import IterGrid
 import os
 from os import path
+import numpy as np
 
 class CVSearch(object):
     """search of meta parameters based on cross validation
@@ -60,27 +61,35 @@ class CVSearch(object):
         model.set_params(**params)
         model.fit(X_train, y_train)
         validation_score = model.score(X_test, y_test)
-        return validation_score    
+        return validation_score
+    def isready(self):
+        return self.workers and self.workers.isready()
+    def progress(self):
+        return self.workers.progress() if self.workers else 1.0
+    def partial_result(self):
+        if not self.workers: return None
+        results = self.workers.partial_result()
+        partial_param_scores = [(params, np.mean([results[(iparam, icv)] for icv in xrange(self.n_iter)])) 
+                for (iparam,params) in enumerate(self.parameters)
+                if all([(iparam, icv) in results for icv in xrange(self.n_iter)])]
+        return sorted(partial_param_scores, key = lambda (p, s): s, reverse = True)    
 
 class GridSearch(CVSearch):
     def __init__(self, name, X, y, data_folder, 
                     n_iter = 5, train_size = None, test_size = 0.2, random_state = 0):
         super(GridSearch, self).__init__(name, X, y, data_folder, 
                                         n_iter, train_size, test_size, random_state)
+        self.jobs = None
     def search(self, model, param_grid):
-        parameters = list(IterGrid(param_grid)) 
+        self.parameters = list(IterGrid(param_grid)) 
 
         tasks = {}
-        for (iparam, params) in enumerate(parameters):
+        for (iparam, params) in enumerate(self.parameters):
             for (icv, (name, datafile)) in enumerate(self.datafiles.items()):
                 tasks[(iparam, icv)] = {'model': model, 'params': params, 'datafile': datafile}
-        print tasks
-        self.jobs = multicore.MulticoreJob().apply(CVSearch.evaluate_model_on_params, tasks)
-        import time
-        while not self.jobs.isready():
-            print self.jobs.progress()
-            time.sleep(2)
-        return self.jobs.partial_result()
+        self.workers = multicore.MulticoreJob().apply(CVSearch.evaluate_model_on_params, tasks)
+        return self
+
 
 def test():
     from sklearn.datasets import load_digits
@@ -90,7 +99,13 @@ def test():
     searcher = GridSearch('digits', X, y, '../tmp/')
     print searcher.datafiles
     from sklearn.svm import SVC
-    print searcher.search(SVC(), {'C': [1, 10], 'gamma': [0.01, 0.1]})
+    searcher.search(SVC(), {'C': np.logspace(-1, 2, 4), 'gamma': np.logspace(-4, 0, 5)})
+    import time
+    while not searcher.isready():
+        print time.sleep(2)
+        print 'progress:', searcher.progress()
+        print 'result:', searcher.partial_result()
+    print searcher.partial_result()
     ## cv search 
     print 'all tests passed ...'
 
