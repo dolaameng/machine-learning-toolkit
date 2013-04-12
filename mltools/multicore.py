@@ -7,6 +7,7 @@ to enable ipython parallel
 
 import numpy as np
 
+
 __all__ = ['MulticoreJob']
 
 from IPython.parallel import Client

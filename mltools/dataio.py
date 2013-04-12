@@ -19,7 +19,8 @@ def persist_named_data(folder, named_data):
         joblib.dump(data, data_file)
         data_files[name] = data_file
     return data_files
-    
+
+## deprecated    
 def load_named_data(data_files):
     """usually used in multiple processes
     """
