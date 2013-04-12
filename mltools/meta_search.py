@@ -13,7 +13,7 @@ __all__ = []
 import multicore
 from sklearn.cross_validation import ShuffleSplit
 from sklearn.grid_search import IterGrid
-import os
+import os, random
 from os import path
 import numpy as np
 
@@ -66,13 +66,13 @@ class CVSearch(object):
         return self.workers and self.workers.isready()
     def progress(self):
         return self.workers.progress() if self.workers else 1.0
-    def partial_result(self):
-        if not self.workers: return None
-        results = self.workers.partial_result()
-        partial_param_scores = [(params, np.mean([results[(iparam, icv)] for icv in xrange(self.n_iter)])) 
-                for (iparam,params) in enumerate(self.parameters)
-                if all([(iparam, icv) in results for icv in xrange(self.n_iter)])]
-        return sorted(partial_param_scores, key = lambda (p, s): s, reverse = True)    
+    def best_params_so_far(self):
+        presult = self.partial_result()
+        return presult[0] if presult else None  
+    def abort(self):
+        print 'abort meta search task'
+        self.workers.abort()
+        return self
 
 class GridSearch(CVSearch):
     def __init__(self, name, X, y, data_folder, 
@@ -89,14 +89,46 @@ class GridSearch(CVSearch):
                 tasks[(iparam, icv)] = {'model': model, 'params': params, 'datafile': datafile}
         self.workers = multicore.MulticoreJob().apply(CVSearch.evaluate_model_on_params, tasks)
         return self
+    def partial_result(self):
+        if not self.workers: return None
+        results = self.workers.partial_result()
+        partial_param_scores = [(params, np.mean([results[(iparam, icv)] for icv in xrange(self.n_iter)])) 
+                for (iparam,params) in enumerate(self.parameters)
+                if all([(iparam, icv) in results for icv in xrange(self.n_iter)])]
+        return sorted(partial_param_scores, key = lambda (p, s): s, reverse = True)
+
+class RandomSearch(CVSearch):
+    def __init__(self, name, X, y, data_folder, 
+                    n_iter = 5, train_size = None, test_size = 0.2, random_state = 0):
+        super(RandomSearch, self).__init__(name, X, y, data_folder, 
+                                                n_iter, train_size, test_size, random_state)
+        self.jobs = None
+    def search(self, model, param_grid):
+        self.parameters = list(IterGrid(param_grid))
+        random.shuffle(self.parameters) 
+
+        tasks = {}
+        for (iparam, params) in enumerate(self.parameters):
+            for (icv, (name, datafile)) in enumerate(self.datafiles.items()):
+                tasks[(iparam, icv)] = {'model': model, 'params': params, 'datafile': datafile}
+        self.workers = multicore.MulticoreJob().apply(CVSearch.evaluate_model_on_params, tasks)
+        return self
+    def partial_result(self):
+        if not self.workers: return None
+        results = self.workers.partial_result()
+        partial_param_scores = [(params, np.mean([results[(iparam, icv)] for icv in xrange(self.n_iter)
+                                                                        if (iparam, icv) in results])) 
+                for (iparam,params) in enumerate(self.parameters)
+                if any([(iparam, icv) in results for icv in xrange(self.n_iter)])]
+        return sorted(partial_param_scores, key = lambda (p, s): s, reverse = True)
 
 
 def test():
     from sklearn.datasets import load_digits
     digits = load_digits()
     X, y = digits.data, digits.target
-    ## test cvsearch - WARNING: should NOT be used directly
-    searcher = GridSearch('digits', X, y, '../tmp/')
+    ## test gridsearch - WARNING: should NOT be used directly
+    searcher = GridSearch('digits', X, y, '../tmp/', n_iter = 10)
     print searcher.datafiles
     from sklearn.svm import SVC
     searcher.search(SVC(), {'C': np.logspace(-1, 2, 4), 'gamma': np.logspace(-4, 0, 5)})
@@ -104,9 +136,20 @@ def test():
     while not searcher.isready():
         print time.sleep(2)
         print 'progress:', searcher.progress()
-        print 'result:', searcher.partial_result()
-    print searcher.partial_result()
-    ## cv search 
+        print 'best result:', searcher.best_params_so_far()
+        if searcher.best_params_so_far():
+            pass#searcher.abort()
+    print len(searcher.partial_result())
+    ## random search 
+    rsearcher = RandomSearch('digits', X, y, '../tmp/', n_iter = 10)
+    rsearcher.search(SVC(), {'C': np.logspace(-1, 2, 4), 'gamma': np.logspace(-4, 0, 5)})
+    while not rsearcher.isready():
+        print time.sleep(2)
+        print 'progress:', rsearcher.progress()
+        print 'best result:', rsearcher.best_params_so_far()
+        if rsearcher.best_params_so_far():
+            pass#rsearcher.abort()
+    print rsearcher.partial_result()
     print 'all tests passed ...'
 
 if __name__ == '__main__':
