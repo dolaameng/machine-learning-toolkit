@@ -8,7 +8,7 @@ $ ipcluster start -n 4
 the implementation is inspired by Grisel's presentation
 https://github.com/ogrisel/parallel_ml_tutorial
 """
-__all__ = []
+__all__ = ['GridSearch', 'RandomSearch']
 
 import multicore
 from sklearn.cross_validation import ShuffleSplit
@@ -134,32 +134,7 @@ class RandomSearch(CVSearch):
 
 
 def test():
-    from sklearn.datasets import load_digits
-    digits = load_digits()
-    X, y = digits.data, digits.target
-    ## test gridsearch - WARNING: should NOT be used directly
-    searcher = GridSearch('digits', X, y, '../tmp/', n_iter = 10)
-    print searcher.datafiles
-    from sklearn.svm import SVC
-    searcher.search(SVC(), {'C': np.logspace(-1, 2, 4), 'gamma': np.logspace(-4, 0, 5)})
-    import time
-    while not searcher.isready():
-        print time.sleep(2)
-        print 'progress:', searcher.progress()
-        print 'best result:', searcher.best_params_so_far()
-        if searcher.best_params_so_far():
-            pass#searcher.abort()
-    print len(searcher.partial_result())
-    ## random search 
-    rsearcher = RandomSearch('digits', X, y, '../tmp/', n_iter = 10)
-    rsearcher.search(SVC(), {'C': np.logspace(-1, 2, 4), 'gamma': np.logspace(-4, 0, 5)})
-    while not rsearcher.isready():
-        print time.sleep(2)
-        print 'progress:', rsearcher.progress()
-        print 'best result:', rsearcher.best_params_so_far()
-        if rsearcher.best_params_so_far():
-            pass#rsearcher.abort()
-    print rsearcher.partial_result()
+    pass
     print 'all tests passed ...'
 
 if __name__ == '__main__':

@@ -30,6 +30,10 @@ class MulticoreJob(object):
     def partial_result(self):
         return {tname:tresult.get() for (tname,tresult) in self.tasks.items()
                     if tresult.ready()}
+    def wait(self):
+        for (tname, tresult) in self.tasks.items():
+            tresult.wait()
+        return self
     def abort(self):
         for (tname, tresult) in self.tasks.items():
             if not tresult.ready():
