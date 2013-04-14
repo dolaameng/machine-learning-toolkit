@@ -21,18 +21,28 @@ class CVSearch(object):
     """search of meta parameters based on cross validation
     WARNING: this class should NOT be used directly, use the derived classes instead
     """
-    def __init__(self, name, X, y, data_folder, 
+    def __init__(self, datafiles = None,
                 n_iter = 5, train_size = None, test_size = 0.2, random_state = 0):
         self.n_iter = n_iter
         self.train_size = train_size
         self.test_size = test_size
         self.random_state = random_state
         self.suffix = '_cv_%03d'
-        ## do the persistence on hard disk
+        ## do the persistence on hard disk if datafiles not passed in
+        ## if datafiles, then no need to call persist_cv_splits again
+        if datafiles:
+            self.datafiles = datafiles
+    def persist_cv_splits(self, name, X, y, data_folder):
+        print 'persisting cv data ', name, 'in folder', data_folder
         self.datafiles = self.__persist_cv_splits(name, X, y, data_folder)
-        ##TODO
+        return self
     def __persist_cv_splits(self, name, X, y, data_folder):
-        cv = ShuffleSplit(X.shape[0], n_iter = self.n_iter,
+        if hasattr(X, 'shape'):
+            n_samples = X.shape[0]
+        else: 
+            n_samples = len(X) ## for text data
+            X = np.array(X)
+        cv = ShuffleSplit(n_samples, n_iter = self.n_iter,
                                 train_size = self.train_size, test_size = self.test_size,
                                 random_state = self.random_state)
         named_data = {}
@@ -75,9 +85,9 @@ class CVSearch(object):
         return self
 
 class GridSearch(CVSearch):
-    def __init__(self, name, X, y, data_folder, 
+    def __init__(self,  datafiles = None,
                     n_iter = 5, train_size = None, test_size = 0.2, random_state = 0):
-        super(GridSearch, self).__init__(name, X, y, data_folder, 
+        super(GridSearch, self).__init__(datafiles, 
                                         n_iter, train_size, test_size, random_state)
         self.jobs = None
     def search(self, model, param_grid):
@@ -98,9 +108,9 @@ class GridSearch(CVSearch):
         return sorted(partial_param_scores, key = lambda (p, s): s, reverse = True)
 
 class RandomSearch(CVSearch):
-    def __init__(self, name, X, y, data_folder, 
+    def __init__(self,  datafiles = None,
                     n_iter = 5, train_size = None, test_size = 0.2, random_state = 0):
-        super(RandomSearch, self).__init__(name, X, y, data_folder, 
+        super(RandomSearch, self).__init__(datafiles, 
                                                 n_iter, train_size, test_size, random_state)
         self.jobs = None
     def search(self, model, param_grid):
