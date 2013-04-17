@@ -12,7 +12,7 @@ https://github.com/ogrisel/parallel_ml_tutorial
 from sklearn.base import BaseEstimator
 from copy import deepcopy
 import numpy as np
-import multicore
+from .. import multicore
 
 class PartitionBasedEnsemble(BaseEstimator):
     """Partition dataset and train individual base models on 

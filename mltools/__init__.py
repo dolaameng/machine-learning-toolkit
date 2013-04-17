@@ -1,1 +1,3 @@
-__all__ = ['meta_search',]
+import multicore
+
+__all__ = ['meta_search', 'multicore']
