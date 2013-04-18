@@ -23,7 +23,7 @@ class LibraryEnsemble(BaseEstimator):
     """
     def __init__(self, voting, score, ensemble = None):
         """
-        voting: voting method for ensemble, {'average', 'probability', 'biclass'},
+        voting: voting method for ensemble, {'regression', 'probability', 'classification'},
             average: averaged value for regression
             probability: avearged posterior probability for classification
             classification: 0 / 1 average for binary classification (not accurate)
