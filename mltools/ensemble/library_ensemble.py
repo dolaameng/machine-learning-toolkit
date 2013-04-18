@@ -19,8 +19,13 @@ import cPickle, json
 class LibraryEnsemble(BaseEstimator):
     """
     """
-    def __init__(self, ensemble = None):
+    def __init__(self, voting, ensemble = None):
         """
+        voting: voting method for ensemble, {'average', 'probability', 'biclass'},
+            average: averaged value for regression
+            probability: avearged posterior probability for classification
+            classification: 0 / 1 average for binary classification (not accurate)
+
         ensemble: list of dict entries of {modelname: [
                                                         model_pickle_file,
                                                         train_X_file, 
@@ -31,6 +36,13 @@ class LibraryEnsemble(BaseEstimator):
         if ensemble is None, it can be learned by fit on a library. 
         in this setting, it is easier to seralize the LibraryEnsemble model
         """
+        self.voting = voting
         self.ensemble = ensemble
+    def __average_vote(self, models, X):
+        return np.mean()
+    def __probability_vote(self, models, X):
+        pass
+    def __biclass_vote(self, models, X):
+        pass
     def fit(self, library):
         pass
