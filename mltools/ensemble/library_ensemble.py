@@ -17,16 +17,46 @@ import numpy as np
 import cPickle, json
 from sklearn.external import joblib
 from sklearn import metrics
+from scipy.stats import mode
+
+##################### Helper functions to generate a library of #################
+## machine learning methods
+
+def persist_train_valid_split(X, y):
+    ## TODO
+    pass
+
+def build_models(model, param_set, library_path, configure_file, 
+                    train_X_path, train_y_path, 
+                    valid_X_path, valid_y_path):
+    """
+    model: a model to fit - e.g. a sklearn model with fit(), predict(), predict_proba()
+    param_set: set of parameters for model to try
+    library_path: the path where all the pickle files stored 
+    configure_file: the configuration files for results to be put in 
+        - like a database, results will be appended
+    """
+    configurations = {}
+    for params in param_set:
+        model.set_params(**params)
+
+##################### LibraryEnsemble Class #####################################
 
 class LibraryEnsemble(BaseEstimator):
     """
     """
-    def __init__(self, voting, score, ensemble = None):
+    def __init__(self, voting, scoring, ensemble = None):
         """
         voting: voting method for ensemble, {'regression', 'probability', 'classification'},
-            average: averaged value for regression
+            regression: averaged value for regression
             probability: avearged posterior probability for classification
-            classification: 0 / 1 average for binary classification (not accurate)
+            classification: label prediction for classification (not accurate)
+
+        scoring: scoring method for ensemble, possible values are 
+        {'regression', 'probability', 'classification'}
+        regression: using the R^2 coefficients score
+        probability: using the auc_score
+        classification (ys are labels): using the classification rate score 
 
         ensemble: dict entries of {modelname: {
                                                     'model':model_pickle_file,
@@ -41,38 +71,41 @@ class LibraryEnsemble(BaseEstimator):
         in this setting, it is easier to seralize the LibraryEnsemble model
         """
         VOTING_METHODS = {
-            'average':self.__average_vote
+            'regression':self.__regression_vote
             , 'probability': self.__probability_vote
-            , 'biclass': __biclass_vote
+            , 'classification': __classification_vote
         }
-        SCORE_METHODS = {
-            'coefficient': self.__coefficient_score ## same as SVR.score
-            , 'classification_rate': self.__classification_rate_score
+        SCORING_METHODS = {
+            'regression': self.__regression_score ## same as SVR.score
+            , 'probability': self.__probability_score,
+            , 'classification': self.__classification_score
         }
         self.voting = VOTING_METHODS[voting]
-        self.score = SCORE_METHODS[score]
+        self.scoring = SCORING_METHODS[scoring]
         self.ensemble = ensemble
-    def __average_vote(self, ys):
-        ##TODO
-        ??return np.mean(np.vstack(ys), axis = 0)
+    def __regression_vote(self, ys):
+        """each y in ys could be of shape (nrow, ntarget)
+        """
+        return sum(ys) * 1. / len(ys)1 
     def __probability_vote(self, ys):
-        ##TODO
-        ??return np.mean(np.vstack(ys), axis = 0)
-    def __biclass_vote(self, ys):
+        return sum(ys) * 1. / len(ys)
+    def __classification_vote(self, ys):
         """
-        0/1 coding for binary classification
+        ys is the label of classes such as [1, 2, 3, 1]
         """
-        ##TODO
-        ??return np.mean(np.vstack(ys), axis = 0) > 0.5
-    def __coefficient_score(self, y_true, y_pred):
-        ##TODO
-        ??
+        y = np.vstack(ys)
+        y_mode = mode(y)[0][0]
+        return y_mode.astype(np.int) 
+    def __regression_score(self, y_true, y_pred):
         u = ((y_true - y_pred) ** 2).sum()
         v = ((y_true - y_true.mean()) ** 2).sum()
         return (1 - u/v)
-    def __classification_rate_score(self, y_true, y_pred):
-        ##TODO
-        ??return metrics.accuracy_score(y_true, y_pred)
+    def __probability_score(self, y_true, y_pred):
+        ## use auc_score 
+        y_pred_label = np.argmax(y_pred, axis = 0)
+        return metrics.accuracy_score(y_true, y_pred_label)
+    def __classification_score(self, y_true, y_pred):
+        return metrics.accuracy_score(y_true, y_pred)
     def fit(self, library):
         """
         configs -- the same format as in self.ensemble
