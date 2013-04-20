@@ -12,21 +12,49 @@
 ## future implementation could involve database
 
 
+__all__ = ['persist_train_valid_split', 'persist_subset_split', 
+            'persist_models', 'LibraryEnsemble']
+
 from sklearn.base import BaseEstimator
 import numpy as np
 import cPickle, json
-from sklearn.external import joblib
+from sklearn.externals import joblib
 from sklearn import metrics
+from sklearn import cross_validation
 from scipy.stats import mode
+import os
 
 ##################### Helper functions to generate a library of #################
 ## machine learning methods
 
-def persist_train_valid_split(X, y):
-    ## TODO
-    pass
+def persist_train_valid_split(X_path, y_path,
+                            train_X_path, valid_X_path,
+                            train_y_path, valid_y_path, 
+                            test_size=0.2, random_state=0):
+    X, y = joblib.load(X_path), joblib.load(y_path)
+    train_X, valid_X, train_y, valid_y = cross_validation.train_test_split(X, y, 
+                                                test_size=test_size,
+                                                random_state=random_state)
+    joblib.dump(train_X, train_X_path)
+    joblib.dump(valid_X, valid_X_path)
+    joblib.dump(train_y, train_y_path)
+    joblib.dump(valid_y, valid_y_path)
 
-def build_models(model, param_set, library_path, configure_file, 
+def persist_subset_split(X_path, y_path, X_sub_path, y_sub_path, suffix = '_%03d.pkl', n_iter=3):
+    X, y = joblib.load(X_path), joblib.load(y_path)
+    n_samples = X.shape[0]
+    assert n_samples == y.shape[0], 'X, y must have the same shape for persist_subset_split'
+    index = range(n_samples)
+    np.random.shuffle(index)
+    chunks = np.array_split(index, n_iter)
+    for (i, chunk) in enumerate(chunks):
+        sub_X, sub_y = X[chunk, :], y[chunk]
+        joblib.dump(sub_X, X_sub_path + suffix % i)
+        joblib.dump(sub_y, y_sub_path + suffix % i)
+
+
+
+def persist_models(modelname, model, param_set, library_path, configure_file, 
                     train_X_path, train_y_path, 
                     valid_X_path, valid_y_path):
     """
@@ -36,9 +64,37 @@ def build_models(model, param_set, library_path, configure_file,
     configure_file: the configuration files for results to be put in 
         - like a database, results will be appended
     """
+    ## load data
+    train_X, train_y = joblib.load(train_X_path), joblib.load(train_y_path)
+    valid_X, valid_y = joblib.load(valid_X_path), joblib.load(valid_y_path)
+    ## for each parameter setting
     configurations = {}
     for params in param_set:
         model.set_params(**params)
+        fullname = modelname + '__' + '__'.join(['%s_%g' % (k, v) for (k,v) in params.items()])
+        print 'training model ', fullname
+        model.fit(train_X, train_y)
+        train_score = model.score(train_X, train_y)
+        valid_score = model.score(valid_X, valid_y)
+        modelpath = os.path.abspath(os.path.join(library_path, fullname + '.pkl'))
+        joblib.dump(model, modelpath)
+        configurations[fullname] = {
+              'model': modelpath
+            , 'train_X': train_X_path
+            , 'train_y': train_y_path
+            , 'valid_X': valid_X_path
+            , 'valid_y': valid_y_path
+            , 'train_score': train_score
+            , 'valid_score': valid_score
+        }
+    ## append the configuration into configuration file
+    if os.path.exists(configure_file):
+        conf_from_file = json.load(open(configure_file, 'rb'))
+    else:
+        conf_from_file = {}
+    conf_from_file.update(configurations)
+    json.dump(conf_from_file, open(configure_file, 'wb'))
+    return conf_from_file
 
 ##################### LibraryEnsemble Class #####################################
 
@@ -73,11 +129,11 @@ class LibraryEnsemble(BaseEstimator):
         VOTING_METHODS = {
             'regression':self.__regression_vote
             , 'probability': self.__probability_vote
-            , 'classification': __classification_vote
+            , 'classification': self.__classification_vote
         }
         SCORING_METHODS = {
             'regression': self.__regression_score ## same as SVR.score
-            , 'probability': self.__probability_score,
+            , 'probability': self.__probability_score
             , 'classification': self.__classification_score
         }
         self.voting = VOTING_METHODS[voting]
@@ -86,7 +142,7 @@ class LibraryEnsemble(BaseEstimator):
     def __regression_vote(self, ys):
         """each y in ys could be of shape (nrow, ntarget)
         """
-        return sum(ys) * 1. / len(ys)1 
+        return sum(ys) * 1. / len(ys)
     def __probability_vote(self, ys):
         return sum(ys) * 1. / len(ys)
     def __classification_vote(self, ys):
@@ -102,18 +158,20 @@ class LibraryEnsemble(BaseEstimator):
         return (1 - u/v)
     def __probability_score(self, y_true, y_pred):
         ## use auc_score 
-        y_pred_label = np.argmax(y_pred, axis = 0)
+        y_pred_label = np.argmax(y_pred, axis = 1)
+        #print y_true.shape, y_pred_label.shape, y_pred.shape
         return metrics.accuracy_score(y_true, y_pred_label)
     def __classification_score(self, y_true, y_pred):
         return metrics.accuracy_score(y_true, y_pred)
     def fit(self, library):
         """
-        configs -- the same format as in self.ensemble
+        library -- file of same json structure of the same format as in self.ensemble
         select ensemble from library greedily to make the valid_score the highest
         """
-        configs = json.loads(library)
+        with open(library, 'rb') as f:
+            configs = json.load(f)
         ## calcualte (model, valid_yhat) for each model
-        modelname2score = {}
+        modelname2yhat = {}
         for modelname in configs.keys():
             model = joblib.load(configs[modelname]['model'])
             valid_X = joblib.load(configs[modelname]['valid_X'])
@@ -121,13 +179,14 @@ class LibraryEnsemble(BaseEstimator):
                 valid_yhat = model.predict_proba(valid_X)
             else:
                 valid_yhat = model.predict(valid_X)
-            modelname2score[modelname] = valid_yhat
+            modelname2yhat[modelname] = valid_yhat
         valid_y = joblib.load(configs[modelname]['valid_y'])
         ## greedy search for ensemble
         ensemble, ensemble_score = [], 0.0
-        candidates = set(modelname2score.keys())
+        candidates = set(modelname2yhat.keys())
         while candidates:
-            next_candidate, next_score = max([(m, self.score(valid_y, self.voting(map(modelname2score.get, ensemble+[m])))) 
+            next_candidate, next_score = max([(m, self.scoring(valid_y, 
+                                                            self.voting(map(modelname2yhat.get, ensemble+[m])))) 
                                                 for m in candidates if m not in ensemble] , 
                                             key = lambda (m, s): s)
             if next_score < ensemble_score:
@@ -136,5 +195,28 @@ class LibraryEnsemble(BaseEstimator):
                 ensemble_score = next_score
                 ensemble.append(next_candidate)
         self.ensemble = {m:configs[m] for m in ensemble}
-    def predict(self, test_config):
-        pass
+        #print ensemble_score
+        #print self.ensemble.keys()
+        #print len(self.ensemble)
+    def predict(self, test_config_file):
+        """
+        test_config: json file of dictionary of {modelname: 
+                            'test_X': test_X_file,
+                            'test_y': test_y_file}
+        'test_y' is not necessary for predict, but necessary for score
+        """
+        with open(test_config_file, 'rb') as f:
+            configs = json.load(f)
+        assert set(configs.keys()) == set(self.ensemble.keys()), 'model names must match in test_config and ensemlbe'
+        modelname2yhat = {}
+        for modelname in self.ensemlbe:
+            model = joblib.load(self.ensemlbe[modelname]['model'])
+            test_X = configs[modelname]['test_X']
+            if hasattr(model, 'predict_proba'):
+                test_yhat = model.predict_proba(test_X)
+            else:
+                test_yhat = model.predict(test_X)
+            modelname2yhat[modelname] = test_yhat
+        return self.voting(map(modelname2yhat.get, self.ensemble))
+
+
